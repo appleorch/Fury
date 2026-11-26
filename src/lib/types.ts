@@ -96,6 +96,33 @@ export interface Route {
   checkpoints: Checkpoint[];
   createdAt: number;
   sample?: boolean;
+  /** Address of the start, when the route was planned from addresses. */
+  from?: Place;
+  /** Address of the finish. */
+  to?: Place;
+  /** Stops in between, in order. */
+  via?: Place[];
+  /** Road route planned between the addresses. */
+  plan?: RoutePlan;
+}
+
+/** A searched address or point of interest. */
+export interface Place extends LatLon {
+  /** Main line, e.g. "1 Infinite Loop" or "Apple Park". */
+  title: string;
+  /** Secondary line, e.g. "Cupertino, CA". */
+  subtitle?: string;
+}
+
+export interface RoutePlan {
+  /** Simplified road geometry, [lat, lon][]. */
+  path: [number, number][];
+  /** Metres. */
+  distance: number;
+  /** Typical driving time without traffic, ms. */
+  duration: number;
+  /** Main roads, e.g. "I-280, Lawrence Expressway". */
+  via: string;
 }
 
 export type Units = 'imperial' | 'metric';
