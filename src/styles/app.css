@@ -2400,3 +2400,197 @@ input[type='range']::-moz-range-thumb {
     transform: scale(0.85);
   }
 }
+
+/* --------------------------------------------------------------------------
+   Route planner (addresses)
+   -------------------------------------------------------------------------- */
+
+.planner-fields {
+  position: relative;
+  padding: 2px 52px 2px 0;
+}
+
+.planner-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 4px 0 16px;
+}
+
+.planner-field + .planner-field::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 48px;
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+/* dotted connector between the stops, like a directions card */
+.planner-field:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 27px;
+  top: 36px;
+  height: 32px;
+  border-left: 2px dotted var(--label-3);
+  z-index: 0;
+}
+
+.planner-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 17px;
+  height: 100%;
+}
+
+.planner-field input::placeholder {
+  color: var(--label-3);
+}
+
+.planner-field.active input {
+  caret-color: var(--blue);
+}
+
+.planner-dot {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.planner-dot.from {
+  background: var(--green);
+}
+
+.planner-dot.from::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.planner-dot.to {
+  background: var(--red);
+}
+
+.planner-dot.stop {
+  background: var(--purple);
+}
+
+.planner-x {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--label-3);
+  flex: none;
+}
+
+.planner-swap {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 38px;
+  height: 38px;
+  margin-top: -19px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+}
+
+.planner-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 4px 0;
+  color: var(--blue);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.plan-options {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 10px -16px 0;
+  padding: 2px 16px;
+}
+
+.plan-options::-webkit-scrollbar {
+  display: none;
+}
+
+.plan-option {
+  flex: 1 0 140px;
+  text-align: left;
+  padding: 11px 13px 12px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  transition:
+    box-shadow 0.2s,
+    transform 0.3s var(--ease-spring);
+}
+
+.plan-option:active {
+  transform: scale(0.97);
+}
+
+.plan-option.on {
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.plan-time {
+  font-family: var(--font-rounded);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.plan-option.on .plan-time {
+  color: var(--blue);
+}
+
+.plan-meta {
+  font-size: 13px;
+  color: var(--label-2);
+  font-weight: 500;
+}
+
+.plan-via {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 3px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

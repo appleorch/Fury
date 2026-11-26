@@ -1,19 +1,22 @@
 import { ChevronRight, Plus, Route as RouteIcon, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { formatDay, formatDistance, formatDuration } from '../lib/format';
+import { formatDay, formatDistance, formatDuration, formatDurationWords } from '../lib/format';
 import { computeRouteStats } from '../lib/routes';
 import { navigate } from '../hooks/router';
 import { dataStore, useData } from '../store/data';
 import { useSettings } from '../store/settings';
 import { Sparkline, TrackThumb } from '../components/charts';
-import { Sheet } from '../components/Sheet';
+import { RoutePlannerSheet } from '../components/RoutePlanner';
+import { recorder } from '../store/recorder';
 import { toast } from '../components/Toast';
-import { Empty, GlassButton, Page, Row, tap } from '../components/ui';
+import { Empty, GlassButton, Page, tap } from '../components/ui';
+import { useDarkMode } from '../hooks/useTheme';
 
 export function RoutesView() {
   const { routes, trips } = useData();
   const { units } = useSettings();
   const [howTo, setHowTo] = useState(false);
+  const dark = useDarkMode();
   const cards = useMemo(
     () =>
       routes
@@ -21,7 +24,6 @@ export function RoutesView() {
         .sort((a, b) => (b.stats.last?.startedAt ?? b.route.createdAt) - (a.stats.last?.startedAt ?? a.route.createdAt)),
     [routes, trips],
   );
-  const unassigned = trips.filter((t) => !t.routeId);
 
   return (
     <Page title="Routes" actions={<GlassButton icon={Plus} onClick={tap(() => setHowTo(true))} ariaLabel="New route" />}>
@@ -47,8 +49,8 @@ export function RoutesView() {
             </div>
           }
         >
-          A route is a drive you repeat, like Home → Work. Fury groups drives with the same start and finish so you can see your best,
-          your average, and how today compares.
+          A route is a drive you repeat, like Home → Work. Enter the addresses, or save any finished drive as a route. Fury groups
+          drives with the same start and finish so you can see your best, your average, and how today compares.
         </Empty>
       ) : (
         cards.map(({ route, stats }) => {
@@ -56,11 +58,12 @@ export function RoutesView() {
           return (
             <button key={route.id} type="button" className="card route-card" onClick={tap(() => navigate(`/routes/${route.id}`))}>
               <div className="route-card-top">
-                <TrackThumb preview={stats.best?.preview ?? []} color={route.color} size={40} />
+                <TrackThumb preview={stats.best?.preview ?? route.plan?.path ?? []} color={route.color} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="route-card-name">{route.name}</div>
                   <div style={{ fontSize: 13.5, color: 'var(--label-2)' }}>
                     {stats.count} drive{stats.count === 1 ? '' : 's'}
+                    {!stats.count && route.plan ? ` · planned ${formatDurationWords(route.plan.duration)}, ${formatDistance(route.plan.distance, units)}` : ''}
                     {stats.count ? ` · ${formatDistance(stats.meanDistance, units)}` : ''}
                     {stats.last ? ` · last ${formatDay(stats.last.startedAt).toLowerCase()}` : ''}
                     {route.sample ? ' · sample' : ''}
@@ -90,48 +93,7 @@ export function RoutesView() {
         })
       )}
 
-      {howTo && (
-        <Sheet title="New route" onClose={() => setHowTo(false)}>
-          <p style={{ margin: '0 4px 14px', color: 'var(--label-2)', fontSize: 15, lineHeight: 1.45 }}>
-            Routes come from real drives, so their start, finish and checkpoints match the roads you take. Either name the route on the
-            Drive screen before you set off, or save any finished drive as a route.
-          </p>
-          <div className="list" style={{ marginBottom: 14 }}>
-            <Row
-              icon={RouteIcon}
-              iconBg="var(--green)"
-              title="Name it on your next drive"
-              sub="Drive tab → route button → New route…"
-              chevron
-              onClick={() => {
-                setHowTo(false);
-                navigate('/', { tab: true });
-              }}
-            />
-          </div>
-          {unassigned.length > 0 && (
-            <>
-              <div className="section-caption">Or pick a past drive</div>
-              <div className="list">
-                {unassigned.slice(0, 12).map((t) => (
-                  <Row
-                    key={t.id}
-                    leading={<TrackThumb preview={t.preview} size={38} />}
-                    inset={66}
-                    title={t.title || formatDay(t.startedAt)}
-                    sub={`${formatDuration(t.duration, 0)} · ${formatDistance(t.distance, units)}`}
-                    chevron
-                    onClick={() => {
-                      setHowTo(false);
-                      navigate(`/trip/${t.id}`);
-                    }}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </Sheet>
-      )}
+      {howTo && <RoutePlannerSheet position={recorder.getSnapshot().fix} dark={dark} onSaved={(r) => navigate(`/routes/${r.id}`)} onClose={() => setHowTo(false)} />}
     </Page>
   );
 }

@@ -1,4 +1,4 @@
-import { Lightbulb, MapPinned, Pencil, Signpost, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
+import { Flag, Lightbulb, MapPinned, Navigation, Pencil, Signpost, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ROUTE_COLORS } from '../lib/color';
 import { formatClock, formatDay, formatDistance, formatDuration, formatDurationWords, WEEKDAYS } from '../lib/format';
@@ -14,6 +14,8 @@ import { toast } from '../components/Toast';
 import { TripMap } from '../components/TripMap';
 import { Delta, Empty, GlassButton, Medal, Page, Row, Section, Segmented, Stat, tap } from '../components/ui';
 import { sectorName } from './TripView';
+import { RoutePlannerSheet } from '../components/RoutePlanner';
+import { recorder } from '../store/recorder';
 
 export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
   const { routes, trips, ready } = useData();
@@ -23,7 +25,7 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
   const [order, setOrder] = useState<'recent' | 'fastest'>('recent');
   const [chartMode, setChartMode] = useState<'date' | 'time'>('date');
   const [editing, setEditing] = useState(false);
-  const [sheet, setSheet] = useState<null | 'rename' | 'delete' | 'radius'>(null);
+  const [sheet, setSheet] = useState<null | 'rename' | 'delete' | 'radius' | 'addresses'>(null);
   const [refPoints, setRefPoints] = useState<TrackPoint[]>([]);
 
   const refId = stats?.best?.id;
@@ -35,7 +37,9 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
       live = false;
     };
   }, [refId]);
-  const refPath = useMemo(() => simplifyTo(refPoints, 800), [refPoints]);
+  const planPath = useMemo(() => (route?.plan?.path ?? []).map(([lat, lon]) => ({ lat, lon })), [route?.plan]);
+  // Path used for the map and for snapping checkpoints: your best drive, or the planned route before you've driven it.
+  const refPath = useMemo(() => (refPoints.length > 1 ? simplifyTo(refPoints, 800) : planPath), [refPoints, planPath]);
 
   if (!ready) return null;
   if (!route || !stats) {
@@ -51,12 +55,13 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
   const weekdays = stats.weekday.filter((w) => w.count > 0 || (w.day >= 1 && w.day <= 5));
 
   const addCheckpoint = (p: LatLon) => {
-    if (refPoints.length < 2) return;
+    const line = refPoints.length > 1 ? refPoints : refPath;
+    if (line.length < 2) return;
     // Snap to the reference drive so the checkpoint sits on the road.
     let best = { d: Infinity, lat: p.lat, lon: p.lon };
-    for (let i = 1; i < refPoints.length; i++) {
-      const a = refPoints[i - 1];
-      const b = refPoints[i];
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
       const pr = projectOnSegment(p, a, b);
       if (pr.dist < best.d) best = { d: pr.dist, lat: a.lat + (b.lat - a.lat) * pr.t, lon: a.lon + (b.lon - a.lon) * pr.t };
     }
@@ -65,7 +70,7 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
     const order = (q: LatLon) => {
       let bi = 0;
       let bd = Infinity;
-      refPoints.forEach((r, i) => {
+      line.forEach((r, i) => {
         const d = Math.hypot(r.lat - q.lat, r.lon - q.lon);
         if (d < bd) {
           bd = d;
@@ -89,7 +94,7 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
     >
       {stats.count === 0 ? (
         <Empty icon={MapPinned} title="No drives yet">
-          Select this route on the Drive screen before you set off, or finish a drive with the same start and finish.
+          Pick this route on the Drive screen before you set off. Until you've driven it, the map shows the planned route.
         </Empty>
       ) : (
         <>
@@ -214,9 +219,50 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
         </>
       )}
 
+      <Section title="Addresses">
+        <div className="list">
+          {route.from && route.to ? (
+            <>
+              <Row leading={<span className="planner-dot from" />} inset={44} title={route.from.title} sub={route.from.subtitle ?? 'Start'} />
+              {(route.via ?? []).map((v, i) => (
+                <Row key={i} leading={<span className="planner-dot stop">{i + 1}</span>} inset={44} title={v.title} sub={v.subtitle ?? `Stop ${i + 1}`} />
+              ))}
+              <Row
+                leading={
+                  <span className="planner-dot to">
+                    <Flag size={12} strokeWidth={2.8} />
+                  </span>
+                }
+                inset={44}
+                title={route.to.title}
+                sub={route.to.subtitle ?? 'Finish'}
+              />
+              {route.plan && (
+                <Row
+                  icon={Navigation}
+                  iconBg="var(--blue)"
+                  title={`${formatDurationWords(route.plan.duration)} · ${formatDistance(route.plan.distance, units)}`}
+                  sub={`Planned${route.plan.via ? ` via ${route.plan.via}` : ''}, without traffic`}
+                />
+              )}
+              <Row icon={Pencil} iconBg="var(--label-2)" title="Edit addresses" chevron onClick={() => setSheet('addresses')} />
+            </>
+          ) : (
+            <Row
+              icon={MapPinned}
+              iconBg="var(--green)"
+              title="Add addresses"
+              sub="Set the start and destination like a navigation app"
+              chevron
+              onClick={() => setSheet('addresses')}
+            />
+          )}
+        </div>
+      </Section>
+
       <Section
         title="Map & checkpoints"
-        action={refPoints.length > 1 ? { label: editing ? 'Done' : 'Edit', onClick: () => setEditing((e) => !e) } : undefined}
+        action={refPath.length > 1 ? { label: editing ? 'Done' : 'Edit', onClick: () => setEditing((e) => !e) } : undefined}
         footer={
           editing
             ? 'Tap the route line to add a checkpoint. Tap a purple checkpoint to remove it. Drives are re-split automatically.'
@@ -294,6 +340,7 @@ export function RouteDetailView({ id, dark }: { id: string; dark: boolean }) {
       {sheet === 'rename' && (
         <PromptSheet title="Rename route" initial={route.name} onSubmit={(name) => dataStore.saveRoute({ ...route, name })} onClose={() => setSheet(null)} />
       )}
+      {sheet === 'addresses' && <RoutePlannerSheet route={route} position={recorder.getSnapshot().fix} dark={dark} onClose={() => setSheet(null)} />}
       {sheet === 'radius' && <RadiusSheet route={route} onClose={() => setSheet(null)} />}
       {sheet === 'delete' && (
         <DeleteRouteSheet

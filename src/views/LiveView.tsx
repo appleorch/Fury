@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Marker } from 'maplibre-gl';
-import { speedGradientCss } from '../lib/color';
+import { speedColorExpression, speedGradientCss } from '../lib/color';
 import { clock } from '../lib/clock';
 import { isIOS, isStandalone } from '../lib/device';
 import { distanceUnit, formatClock, formatDelta, formatDistanceValue, formatDuration, formatSpeed, speedUnit, speedValue } from '../lib/format';
@@ -26,6 +26,7 @@ import { dataStore, useData } from '../store/data';
 import { lapFlashText, recorder, useRecorder, type RecorderSnapshot } from '../store/recorder';
 import { settingsStore, useSettings } from '../store/settings';
 import { useMapController } from '../components/MapCanvas';
+import { FollowAnimator } from '../components/follow';
 import { addPin, addTrackLayers, MAP_CREDIT_HTML, pathFeature, pinElement, puckElement, setTrackPalette, trackFeatures, Marker as MLMarker } from '../components/map';
 import { RoutePickerSheet } from '../components/RoutePicker';
 import { ConfirmSheet, Sheet } from '../components/Sheet';
@@ -51,7 +52,9 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
   const hudRef = useRef<HTMLDivElement>(null);
   const puckRef = useRef<Marker | null>(null);
   const pinsRef = useRef<Marker[]>([]);
-  const firstFix = useRef(true);
+  const animRef = useRef<FollowAnimator | null>(null);
+  const tipFrom = useRef<{ lat: number; lon: number; v: number } | null>(null);
+  const lastTipAt = useRef(0);
   const route = dataStore.route(rec.routeId);
   const recording = rec.state === 'recording';
   const idle = rec.state === 'idle';
@@ -69,6 +72,36 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
     if (import.meta.env.DEV || location.search.includes('debug')) (window as unknown as { __furyMap: unknown }).__furyMap = ctl.map;
     const el = puckElement();
     puckRef.current = new MLMarker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' });
+    // The last stretch of the line is drawn up to the animated puck so the line never runs ahead of it.
+    ctl.layer({
+      id: 'trk-tip-casing',
+      type: 'line',
+      source: 'trk-tip',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#000000', 'line-opacity': 0.22, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 13, 8, 16, 10, 19, 17] as never },
+    });
+    ctl.layer({
+      id: 'trk-tip',
+      type: 'line',
+      source: 'trk-tip',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': speedColorExpression(settingsStore.get().speedPalette) as never,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.9, 13, 5.2, 16, 6.5, 19, 11] as never,
+      },
+    });
+    animRef.current = new FollowAnimator(ctl.map, puckRef.current, () => clock.now(), (pos) => {
+      const from = tipFrom.current;
+      const now = performance.now();
+      if (now - lastTipAt.current < 33) return;
+      lastTipAt.current = now;
+      ctl.setData('trk-tip', {
+        type: 'FeatureCollection',
+        features: from
+          ? [{ type: 'Feature', properties: { v: from.v }, geometry: { type: 'LineString', coordinates: [[from.lon, from.lat], [pos.lon, pos.lat]] } }]
+          : [],
+      });
+    });
     const stopFollow = (e: { originalEvent?: unknown }) => {
       if (e.originalEvent) setFollow(false);
     };
@@ -76,24 +109,46 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
     ctl.map.on('rotatestart', stopFollow);
     ctl.map.on('zoomstart', stopFollow);
     return () => {
+      animRef.current?.destroy();
+      animRef.current = null;
       puckRef.current?.remove();
       puckRef.current = null;
     };
   }, [ctl]);
 
   useEffect(() => {
-    if (ctl) setTrackPalette(ctl, settings.speedPalette);
+    if (!ctl) return;
+    setTrackPalette(ctl, settings.speedPalette);
+    ctl.setPaint('trk-tip', 'line-color', speedColorExpression(settings.speedPalette));
   }, [ctl, settings.speedPalette]);
 
   useEffect(() => {
     if (active && ctl) requestAnimationFrame(() => ctl.map.resize());
   }, [active, ctl]);
 
-  // Live track
+  // Live track: everything up to the second-to-last point; the animated tip draws the rest.
+  // Rebuilding the whole line is throttled so fast Simulation doesn't flood the map.
+  const trackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackAt = useRef(0);
   useEffect(() => {
     if (!ctl) return;
-    ctl.setData('trk-line', trackFeatures(recorder.points(), settings.speedScaleMax));
-  }, [ctl, rec.trackVersion, settings.speedScaleMax]);
+    const draw = () => {
+      trackTimer.current = null;
+      lastTrackAt.current = performance.now();
+      const pts = recorder.points();
+      const live = recorder.getSnapshot().state === 'recording' && pts.length >= 2;
+      ctl.setData('trk-line', trackFeatures(live ? pts.slice(0, -1) : pts, settingsStore.get().speedScaleMax));
+      const a = live ? pts[pts.length - 2] : null;
+      tipFrom.current = a ? { lat: a.lat, lon: a.lon, v: Math.min(1, (a.spd + pts[pts.length - 1].spd) / 2 / settingsStore.get().speedScaleMax) } : null;
+      if (!live) ctl.setData('trk-tip', pathFeature([]));
+    };
+    const wait = 250 - (performance.now() - lastTrackAt.current);
+    if (wait <= 0) draw();
+    else if (!trackTimer.current) trackTimer.current = setTimeout(draw, wait);
+  }, [ctl, rec.trackVersion, rec.state, settings.speedScaleMax]);
+  useEffect(() => () => {
+    if (trackTimer.current) clearTimeout(trackTimer.current);
+  }, []);
 
   // Reference path for the selected route + start/finish/checkpoint pins
   useEffect(() => {
@@ -111,43 +166,42 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
       void dataStore.getTrack(rec.ghostRef.tripId).then((pts) => {
         if (!cancelled) ctl.setData('trk-ref', pathFeature(simplifyTo(pts, 600)));
       });
-    } else ctl.setData('trk-ref', pathFeature([]));
+    } else ctl.setData('trk-ref', pathFeature((route.plan?.path ?? []).map(([lat, lon]) => ({ lat, lon }))));
     return () => {
       cancelled = true;
     };
   }, [ctl, route, rec.ghostRef]);
 
-  // Puck + camera follow
+  // Feed GPS fixes to the animator; it moves the puck and camera smoothly every frame.
   useEffect(() => {
     const f = rec.fix;
-    if (!ctl || !f || !puckRef.current) return;
-    const puck = puckRef.current;
-    puck.setLngLat([f.lon, f.lat]);
-    if (!puck.getElement().isConnected) puck.addTo(ctl.map);
-    const moving = rec.speed > 1.5 && rec.heading != null;
-    puck.setRotation(rec.heading ?? 0);
-    puck.getElement().classList.toggle('has-heading', moving);
-    if (!active || !follow) return;
-    const hud = hudRef.current?.getBoundingClientRect().height ?? 300;
-    const padding = { top: 130, bottom: Math.min(hud + 30, window.innerHeight * 0.6), left: 20, right: 20 };
-    const headingUp = settingsStore.get().headingUp;
-    const bearing = headingUp ? (moving ? rec.heading! : ctl.map.getBearing()) : 0;
-    if (firstFix.current) {
-      firstFix.current = false;
-      ctl.map.jumpTo({ center: [f.lon, f.lat], zoom: 16, padding });
-      return;
-    }
-    ctl.map.easeTo({
-      center: [f.lon, f.lat],
-      bearing,
-      pitch: headingUp && !idle ? 45 : 0,
-      zoom: idle ? Math.max(ctl.map.getZoom(), 15) : zoomForSpeed(rec.speed),
-      padding,
-      duration: clock.rate > 1 ? 1000 / clock.rate + 60 : 1000,
-      easing: (t) => t,
-      essential: true,
-    });
-  }, [ctl, rec.fix, rec.heading, rec.speed, active, follow, idle]);
+    const anim = animRef.current;
+    if (!ctl || !f || !anim || !puckRef.current) return;
+    if (!puckRef.current.getElement().isConnected) puckRef.current.setLngLat([f.lon, f.lat]).addTo(ctl.map);
+    anim.push({ t: f.t, lat: f.lat, lon: f.lon, hdg: f.hdg ?? rec.heading, speed: f.spd ?? rec.speed });
+  }, [ctl, rec.fix, rec.heading, rec.speed]);
+
+  // Camera goals: follow on/off, heading-up, zoom by speed, tilt while driving.
+  const zoomBucket = idle ? 16 : zoomForSpeed(rec.speed);
+  useEffect(() => {
+    const anim = animRef.current;
+    if (!ctl || !anim) return;
+    anim.active = active;
+    anim.setGoal({ follow, headingUp: settings.headingUp, zoom: zoomBucket, pitch: settings.headingUp && !idle ? 45 : 0 });
+  }, [ctl, active, follow, settings.headingUp, zoomBucket, idle]);
+
+  // Keep the puck in the visible gap between the top controls and the HUD.
+  useEffect(() => {
+    if (!ctl) return;
+    const apply = () => {
+      const hud = hudRef.current?.getBoundingClientRect().height ?? 300;
+      ctl.map.setPadding({ top: 130, bottom: Math.min(hud + 30, window.innerHeight * 0.6), left: 20, right: 20 });
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    if (hudRef.current) ro.observe(hudRef.current);
+    return () => ro.disconnect();
+  }, [ctl]);
 
   // Auto-finish → summary
   useEffect(() => {
@@ -165,8 +219,7 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
 
   const recenter = () => {
     setFollow(true);
-    const f = rec.fix;
-    if (ctl && f) ctl.map.easeTo({ center: [f.lon, f.lat], zoom: 16, duration: 600 });
+    animRef.current?.snap();
   };
 
   const finish = async () => {
@@ -284,6 +337,7 @@ export function LiveView({ active, dark }: { active: boolean; dark: boolean }) {
           pendingName={rec.pendingRouteName}
           onSelect={(id) => void recorder.setRoute(id)}
           onNew={(name) => recorder.setPendingRoute(name)}
+          dark={dark}
           onClose={() => setPicker(false)}
         />
       )}

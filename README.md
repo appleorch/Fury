@@ -35,8 +35,9 @@ Updates deploy automatically whenever `main` changes; the app picks them up the 
 ## Using it
 
 **Drive tab**
-- Tap the route button (top left) to choose a saved route, a free drive, or **New route…** to name the route you're about
-  to drive. It's created from this drive's start and finish when you're done.
+- Tap the route button (top left) to choose a saved route, a free drive, or **New route…**. A new route works like the
+  directions card in a navigation app: type the start and destination (or use your current location), add stops if you
+  like, and pick one of the suggested roads. Or skip the addresses and let this drive's start and finish define it.
 - The big red button starts the timer. While recording you get the current **lap time** (large), total time, speed,
   distance and average speed, plus **Lap** and **Pause** buttons. When paused you can **Resume**, **Finish**, or
   **Discard**.
@@ -52,7 +53,9 @@ top speed, climb, a lap table with best and slowest laps, speed along the drive,
 route, your rank, the gap to your best and your average, and a sector-by-sector comparison. You can rename the drive,
 save it as a route, move it to another route, export it as GPX, or delete it.
 
-**Routes tab.** Each route shows best, average and last time with a trend line. Inside a route:
+**Routes tab.** Tap **+** to plan a route from addresses. Each route shows best, average and last time with a trend line. Inside a route:
+- its addresses and the planned road route (time without traffic, distance, main roads), editable at any time. Until
+  you've driven it, the planned route is drawn on the Drive map and used for placing checkpoints
 - every drive plotted by date (with a rolling average) or by **departure time**, plus a plain-language tip such as
   *"Leaving 7:30–7:45 averages 14:33, about 4 min quicker than leaving 8:00–8:15"*
 - average time by weekday, consistency and weekly trend
@@ -84,6 +87,10 @@ splits, the live comparison and every statistic from the couch. Turn Simulation 
   **timer keeps running**: the missing stretch is drawn as a straight line and the drive is saved normally. Mounting the
   phone and leaving Fury open works best.
 - Your recording survives the app being closed. Reopen it and the drive carries on where it was.
+- Address search uses [Photon](https://photon.komoot.io) and directions use the [OSRM](https://project-osrm.org) demo
+  server, both free OpenStreetMap services with no account. Only the addresses you search are sent to them.
+- The map dot is drawn about one GPS update behind the live position, so it can glide smoothly between fixes. Lap times
+  and statistics always use the real fixes.
 - Data lives in the app's on-device storage. **Removing the Home Screen icon deletes it**, so use *Settings → Export backup*
   now and then. A backup is a single JSON file you can save to Files and import later.
 - Set everything up before you pull away. The controls are big on purpose, but your eyes belong on the road.

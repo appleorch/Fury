@@ -5,7 +5,8 @@ import { computeRouteStats, routesNear } from '../lib/routes';
 import type { LatLon } from '../lib/types';
 import { useData } from '../store/data';
 import { useSettings } from '../store/settings';
-import { PromptSheet, Sheet } from './Sheet';
+import { RoutePlannerSheet } from './RoutePlanner';
+import { Sheet } from './Sheet';
 import { Row } from './ui';
 
 /** Choose the route you're driving (or start a new one) from the Drive screen. */
@@ -15,6 +16,7 @@ export function RoutePickerSheet({
   pendingName,
   onSelect,
   onNew,
+  dark,
   onClose,
 }: {
   position: LatLon | null;
@@ -22,6 +24,7 @@ export function RoutePickerSheet({
   pendingName: string | null;
   onSelect: (id: string | null) => void;
   onNew: (name: string) => void;
+  dark: boolean;
   onClose: () => void;
 }) {
   const { routes, trips } = useData();
@@ -91,20 +94,21 @@ export function RoutePickerSheet({
             icon={pendingName ? RouteIcon : Plus}
             iconBg="var(--green)"
             title={pendingName ? `New route: ${pendingName}` : 'New route…'}
-            sub="Name it now; it's saved from this drive's start and finish when you're done."
+            sub="Enter addresses like a navigation app, or name it and let this drive set the start and finish."
             accessory={pendingName ? check : undefined}
             onClick={() => setNaming(true)}
           />
         </div>
       </Sheet>
       {naming && (
-        <PromptSheet
-          title="New route"
-          message="Give this route a name, like “Home → Work”."
-          placeholder="Home → Work"
-          initial={pendingName ?? ''}
-          confirmLabel="Use this route"
-          onSubmit={(name) => {
+        <RoutePlannerSheet
+          position={position}
+          dark={dark}
+          onSaved={(r) => {
+            onSelect(r.id);
+            onClose();
+          }}
+          onSkip={(name) => {
             onNew(name);
             onClose();
           }}
